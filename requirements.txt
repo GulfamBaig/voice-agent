@@ -4,6 +4,7 @@ openai-whisper
 sentence-transformers
 faiss-cpu
 numpy
-torchaudio
+scipy
+soundfile
 langdetect
 torch
