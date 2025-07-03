@@ -15,7 +15,8 @@ import whisper
 # Initialize OpenAI and Whisper
 client = OpenAI()
 stt = whisper.load_model("base", device="cpu")
-model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+model = SentenceTransformer("all-MiniLM-L6-v2")
+model.to("cpu")
 
 # Load and chunk company data
 with open('arslanasghar_full_content.txt', 'r', encoding='utf-8') as f:
