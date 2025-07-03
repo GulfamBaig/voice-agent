@@ -5,7 +5,8 @@ import numpy as np
 import tempfile
 import streamlit as st
 import torch
-import torchaudio
+import soundfile as sf
+import scipy.signal
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 from langdetect import detect
@@ -21,7 +22,7 @@ with open('arslanasghar_full_content.txt', 'r', encoding='utf-8') as f:
     raw_text = f.read()
 
 chunk_size = 500
-chunks = [raw_text[i:i+chunk_size] for i in range(0, len(raw_text), chunk_size)]
+chunks = [raw_text[i:i + chunk_size] for i in range(0, len(raw_text), chunk_size)]
 embeddings = model.encode(chunks)
 
 dim = embeddings.shape[1]
@@ -87,29 +88,28 @@ if user_id and (audio_bytes or typed_text):
             tmp.write(audio_bytes.read())
             audio_path = tmp.name
 
-        # ----- Improved Transcription Using Torchaudio -----
-        waveform, sample_rate = torchaudio.load(audio_path)
+        # Load WAV using soundfile
+        audio_array, sample_rate = sf.read(audio_path)
 
-        # Convert to mono if needed
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        # Convert to mono if stereo
+        if len(audio_array.shape) > 1:
+            audio_array = np.mean(audio_array, axis=1)
 
-        # Resample to 16 kHz
+        # Resample to 16000 Hz
         if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
-            waveform = resampler(waveform)
+            num_samples = int(len(audio_array) * 16000 / sample_rate)
+            audio_array = scipy.signal.resample(audio_array, num_samples)
+            sample_rate = 16000
 
         # Normalize to [-1, 1]
-        waveform = waveform.squeeze().float()
-        max_val = max(abs(waveform.max()), abs(waveform.min()))
-        if max_val > 0:
-            waveform = waveform / max_val
+        audio_array = audio_array / np.max(np.abs(audio_array))
 
-        # Pad or trim to fit Whisper's input size
-        audio_tensor = whisper.pad_or_trim(waveform)
+        # Convert to torch tensor
+        audio_tensor = torch.tensor(audio_array).float()
+        audio_tensor = whisper.pad_or_trim(audio_tensor)
+
+        # Get log-mel spectrogram & decode
         mel = whisper.log_mel_spectrogram(audio_tensor).to(stt.device)
-
-        # Decode
         options = whisper.DecodingOptions(fp16=False)
         result = whisper.decode(stt, mel, options)
         user_text = result.text.strip()
@@ -163,7 +163,7 @@ if user_id and (audio_bytes or typed_text):
     with open("response.mp3", "wb") as f:
         audio_data = client.audio.speech.create(
             model="tts-1",
-            voice="echo",  # Male-sounding voice
+            voice="echo",
             input=ai_reply
         )
         f.write(audio_data.content)
